@@ -26,54 +26,48 @@ THE SOFTWARE.
 #include <cassert>
 #include <time.h>
 
+#include <fstream>
 #include <ios>
 #include <iostream>
-#include <fstream>
-#include <string>
 #include <signal.h>
+#include <string>
 
 // note: MinGW64 defines both __MINGW32__ and __MINGW64__
-#if defined (_MSC_VER) || defined (__MINGW32__) || defined(_WIN32)
+#if defined(_MSC_VER) || defined(__MINGW32__) || defined(_WIN32)
 #include <ctime>
-static inline double cpuTime(void)
-{
-    return (double)clock() / CLOCKS_PER_SEC;
-}
-static inline double cpuTimeTotal(void)
-{
-    return (double)clock() / CLOCKS_PER_SEC;
+static inline double cpuTime(void) { return (double)clock() / CLOCKS_PER_SEC; }
+static inline double cpuTimeTotal(void) {
+  return (double)clock() / CLOCKS_PER_SEC;
 }
 
 #else //_MSC_VER
-#include <sys/time.h>
 #include <sys/resource.h>
+#include <sys/time.h>
 #include <unistd.h>
 
-static inline double cpuTime(void)
-{
-    struct rusage ru;
-    #ifdef RUSAGE_THREAD
-    int ret = getrusage(RUSAGE_THREAD, &ru);
-    #else
-    int ret = getrusage(RUSAGE_SELF, &ru);
-    #endif
+static inline double cpuTime(void) {
+  struct rusage ru;
+#ifdef RUSAGE_THREAD
+  int ret = getrusage(RUSAGE_THREAD, &ru);
+#else
+  int ret = getrusage(RUSAGE_SELF, &ru);
+#endif
 
-    //NOTE: This is needed because Windows' Linux subsystem returns non-zero
-    //and I can't figure out a way to detect Windows.
-    if (ret != 0) {
-        return (double)clock() / CLOCKS_PER_SEC;
-    }
+  // NOTE: This is needed because Windows' Linux subsystem returns non-zero
+  // and I can't figure out a way to detect Windows.
+  if (ret != 0) {
+    return (double)clock() / CLOCKS_PER_SEC;
+  }
 
-    return (double)ru.ru_utime.tv_sec + (double)ru.ru_utime.tv_usec / 1000000.0;
+  return (double)ru.ru_utime.tv_sec + (double)ru.ru_utime.tv_usec / 1000000.0;
 }
 
-static inline double cpuTimeTotal(void)
-{
-    struct rusage ru;
-    int ret = getrusage(RUSAGE_SELF, &ru);
-    assert(ret == 0);
+static inline double cpuTimeTotal(void) {
+  struct rusage ru;
+  int ret = getrusage(RUSAGE_SELF, &ru);
+  assert(ret == 0);
 
-    return (double)ru.ru_utime.tv_sec + (double)ru.ru_utime.tv_usec / 1000000.0;
+  return (double)ru.ru_utime.tv_sec + (double)ru.ru_utime.tv_usec / 1000000.0;
 }
 
 #endif
@@ -84,60 +78,58 @@ static inline double cpuTimeTotal(void)
 // size and resident set size, and return the results in KB.
 //
 // On failure, returns 0.0, 0.0
-static inline uint64_t memUsedTotal(double& vm_usage)
-{
-   //double& vm_usage
-   using std::ios_base;
-   using std::ifstream;
-   using std::string;
+static inline uint64_t memUsedTotal(double &vm_usage) {
+  // double& vm_usage
+  using std::ifstream;
+  using std::ios_base;
+  using std::string;
 
-   vm_usage     = 0.0;
+  vm_usage = 0.0;
 
-   // 'file' stat seems to give the most reliable results
-   //
-   ifstream stat_stream("/proc/self/stat",ios_base::in);
+  // 'file' stat seems to give the most reliable results
+  //
+  ifstream stat_stream("/proc/self/stat", ios_base::in);
 
-   // dummy vars for leading entries in stat that we don't care about
-   //
-   string pid, comm, state, ppid, pgrp, session, tty_nr;
-   string tpgid, flags, minflt, cminflt, majflt, cmajflt;
-   string utime, stime, cutime, cstime, priority, nice;
-   string O, itrealvalue, starttime;
+  // dummy vars for leading entries in stat that we don't care about
+  //
+  string pid, comm, state, ppid, pgrp, session, tty_nr;
+  string tpgid, flags, minflt, cminflt, majflt, cmajflt;
+  string utime, stime, cutime, cstime, priority, nice;
+  string O, itrealvalue, starttime;
 
-   // the two fields we want
-   //
-   unsigned long vsize;
-   long rss;
+  // the two fields we want
+  //
+  unsigned long vsize;
+  long rss;
 
-   stat_stream >> pid >> comm >> state >> ppid >> pgrp >> session >> tty_nr
-               >> tpgid >> flags >> minflt >> cminflt >> majflt >> cmajflt
-               >> utime >> stime >> cutime >> cstime >> priority >> nice
-               >> O >> itrealvalue >> starttime >> vsize >> rss; // don't care about the rest
+  stat_stream >> pid >> comm >> state >> ppid >> pgrp >> session >> tty_nr >>
+      tpgid >> flags >> minflt >> cminflt >> majflt >> cmajflt >> utime >>
+      stime >> cutime >> cstime >> priority >> nice >> O >> itrealvalue >>
+      starttime >> vsize >> rss; // don't care about the rest
 
-   stat_stream.close();
+  stat_stream.close();
 
-   long page_size_kb = sysconf(_SC_PAGE_SIZE); // in case x86-64 is configured to use 2MB pages
-   vm_usage     = vsize;
-   double resident_set = (double)rss * (double)page_size_kb;
+  long page_size_kb =
+      sysconf(_SC_PAGE_SIZE); // in case x86-64 is configured to use 2MB pages
+  vm_usage = vsize;
+  double resident_set = (double)rss * (double)page_size_kb;
 
-   return resident_set;
+  return resident_set;
 }
 #elif defined(__FreeBSD__)
 #include <sys/types.h>
-inline uint64_t memUsedTotal(double& vm_usage)
-{
-    vm_usage = 0;
+inline uint64_t memUsedTotal(double &vm_usage) {
+  vm_usage = 0;
 
-    struct rusage ru;
-    getrusage(RUSAGE_SELF, &ru);
-    return ru.ru_maxrss*1024;
+  struct rusage ru;
+  getrusage(RUSAGE_SELF, &ru);
+  return ru.ru_maxrss * 1024;
 }
-#else //Windows
-static inline size_t memUsedTotal(double& vm_usage)
-{
-    vm_usage = 0;
-    return 0;
+#else // Windows
+static inline size_t memUsedTotal(double &vm_usage) {
+  vm_usage = 0;
+  return 0;
 }
 #endif
 
-#endif //TIME_MEM_H
+#endif // TIME_MEM_H

@@ -25,81 +25,72 @@
  THE SOFTWARE.
  */
 
-
 #ifndef AppMC_H_
 #define AppMC_H_
 
 #include "approxmcconfig.h"
-#include <fstream>
-#include <random>
-#include <map>
-#include <cstdint>
 #include <cryptominisat5/cryptominisat.h>
+#include <cstdint>
+#include <fstream>
+#include <map>
+#include <random>
 
 using std::string;
 using std::vector;
 using namespace CMSat;
 
 struct SATCount {
-    void clear()
-    {
-        SATCount tmp;
-        *this = tmp;
-    }
-    uint32_t hashCount = 0;
-    uint32_t cellSolCount = 0;
+  void clear() {
+    SATCount tmp;
+    *this = tmp;
+  }
+  uint32_t hashCount = 0;
+  uint32_t cellSolCount = 0;
 };
 
 class AppMC {
 public:
-    AppMC()
-    {
-    }
+  AppMC() {}
 
-    ~AppMC()
-    {
-    }
+  ~AppMC() {}
 
-    int solve(AppMCConfig _conf);
-    string GenerateRandomBits(const uint32_t size, const uint32_t numhashes);
-    string binary(const uint32_t x, const uint32_t length);
-    bool gen_rhs();
-    uint32_t loThresh;
-    uint32_t hiThresh;
-    SATSolver* solver = NULL;
-    void printVersionInfo() const;
+  int solve(AppMCConfig _conf);
+  string GenerateRandomBits(const uint32_t size, const uint32_t numhashes);
+  string binary(const uint32_t x, const uint32_t length);
+  bool gen_rhs();
+  uint32_t loThresh;
+  uint32_t hiThresh;
+  SATSolver *solver = NULL;
+  void printVersionInfo() const;
 
 private:
-    AppMCConfig conf;
-    bool count(SATCount& count);
-    void add_scalmc_options();
-    bool ScalAppMC(SATCount& count);
-    bool add_hash(uint32_t num_xor_cls, vector<Lit>& assumps, uint32_t total_num_hashes);
-    void SetHash(uint32_t clausNum, std::map<uint64_t,Lit>& hashVars, vector<Lit>& assumps);
-    int correctReturnValue(const lbool ret) const;
+  AppMCConfig conf;
+  bool count(SATCount &count);
+  void add_scalmc_options();
+  bool ScalAppMC(SATCount &count);
+  bool add_hash(uint32_t num_xor_cls, vector<Lit> &assumps,
+                uint32_t total_num_hashes);
+  void SetHash(uint32_t clausNum, std::map<uint64_t, Lit> &hashVars,
+               vector<Lit> &assumps);
+  int correctReturnValue(const lbool ret) const;
 
-    int64_t bounded_sol_count(
-        uint32_t maxSolutions,
-        const vector<Lit>& assumps,
-        const uint32_t hashCount
-    );
+  int64_t bounded_sol_count(uint32_t maxSolutions, const vector<Lit> &assumps,
+                            const uint32_t hashCount);
 
-    void readInAFile(SATSolver* solver2, const string& filename);
-    void readInStandardInput(SATSolver* solver2);
+  void readInAFile(SATSolver *solver2, const string &filename);
+  void readInStandardInput(SATSolver *solver2);
 
+  double startTime;
+  std::map<std::string, std::vector<uint32_t>> globalSolutionMap;
+  void openLogFile();
+  void call_after_parse();
 
-    double startTime;
-    std::map< std::string, std::vector<uint32_t>> globalSolutionMap;
-    void openLogFile();
-    void call_after_parse();
+  std::ofstream logfile;
+  std::mt19937 randomEngine;
+  double total_runtime; // runTime
 
-    std::ofstream logfile;
-    std::mt19937 randomEngine;
-    double total_runtime; //runTime
-
-    int argc;
-    char** argv;
+  int argc;
+  char **argv;
 };
 
-
-#endif //AppMC_H_
+#endif // AppMC_H_
