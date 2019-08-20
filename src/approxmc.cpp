@@ -92,6 +92,7 @@ template <class T> inline T findMedian(vector<T> &num_list) {
 }
 
 template <class T> inline T findMin(vector<T> &num_list) {
+  // NOTE: is useless atm
   T min = num_list[0];
   for (auto it = num_list.begin() + 1; it != num_list.end(); ++it) {
     if ((*it) < min) {
@@ -109,16 +110,15 @@ void AppMC::addHash(uint32_t num_hashes, vector<Lit> &assumps,
     // NOTE: magic numbers are related to yash's work
     cutoff = 13.46 * std::log(total_num_hashes) / total_num_hashes;
     assert(cutoff < 0.5);
+
     cout << "[appmc] sparse hashing used, cutoff: " << cutoff << endl;
   }
-
   vector<uint32_t> vars;
-
   for (uint32_t i = 0; i < num_hashes; i++) {
-    // new activation variable, use to remove the clause later
+    // new activation variable, use to control the number of active hashes
     solver->new_var();
     uint32_t act_var = solver->nVars() - 1;
-    assumps.push_back(Lit(act_var, true));
+    assumps.push_back(Lit(act_var, false));
 
     vars.clear();
     vars.push_back(act_var);
@@ -128,8 +128,7 @@ void AppMC::addHash(uint32_t num_hashes, vector<Lit> &assumps,
         vars.push_back(conf.sampling_set[j]);
       }
     }
-    // NOTE: do we need to use cutoff for the constant too ? I think so
-    bool rhs = dist(random_engine) < cutoff;
+    bool rhs = dist(random_engine) < 0.5;
     solver->add_xor_clause(vars, rhs);
     if (conf.verb_appmc_cls) {
       printXor(vars, rhs);
@@ -153,7 +152,7 @@ uint64_t AppMC::boundedSolCount(uint32_t max_solutions,
   vector<Lit> new_assumps(assumps);
   solver->new_var();
   uint32_t act_var = solver->nVars() - 1;
-  new_assumps.push_back(Lit(act_var, true));
+  new_assumps.push_back(Lit(act_var, false));
   if (hash_count > 2) {
     solver->simplify(&new_assumps);
   }
@@ -185,11 +184,11 @@ uint64_t AppMC::boundedSolCount(uint32_t max_solutions,
       solutions++;
 
       vector<Lit> lits;
-      lits.push_back(Lit(act_var, false));
+      lits.push_back(Lit(act_var, true));
       for (const uint32_t var : conf.sampling_set) {
         assert(model[var] != l_Undef);
-        lits.push_back(Lit(var, solver->get_model()[var] ==
-                                    l_True)); // NOTE: shouldn't it be != true ?
+        lits.push_back(
+            Lit(var, model[var] == l_True)); // NOTE: shouldn't it be != true ?
       }
       if (conf.verb_appmc_cls) {
         cout << "[appmc] Adding banning clause: " << lits << endl;
@@ -200,7 +199,7 @@ uint64_t AppMC::boundedSolCount(uint32_t max_solutions,
 
   // Remove clauses added
   vector<Lit> cl_that_removes;
-  cl_that_removes.push_back(Lit(act_var, false));
+  cl_that_removes.push_back(Lit(act_var, true));
   solver->add_clause(cl_that_removes);
 
   assert(ret != l_Undef);
