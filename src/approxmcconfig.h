@@ -32,20 +32,17 @@
 
 struct AppMCConfig {
   uint32_t start_iter = 0;
-  uint32_t threshold = 72; // precision
-  double epsilon = 0.80;
-  uint32_t measurements = 9; // confidence of 0.81
-  double delta = 0.2;
   uint32_t num_threads = 1;
-  uint32_t startiter = 0;
   bool sparse = false;
   unsigned verb = 1;
   unsigned verb_appmc_cls = 0;
   uint32_t seed = 1;
   std::vector<uint32_t> sampling_set;
-  // If kappa has been removed the next line is useless ??
-  double kappa = 0.638; /* Corresponds to epsilon=16 */
   std::string logfilename = "";
+  // NOTE: If kappa has been removed the next line is useless
+  double kappa = 0.638;   /* Corresponds to epsilon=16 */
+  uint32_t startiter = 0; // NOTE: what's the difference with start_iter ?
+  // it doesn't seems to be used
 };
 
 #endif // APPMCCONFIG

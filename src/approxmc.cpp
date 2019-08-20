@@ -54,6 +54,13 @@ using std::endl;
 using std::list;
 using std::map;
 
+AppMC::AppMC(AppMCConfig conf, SATSolver *solver) : conf(conf), solver(solver) {
+  if (solver == NULL) {
+    cerr << "No solver was defined" << endl;
+    exit(1);
+  }
+}
+
 void printXor(const vector<uint32_t> &vars, const uint32_t rhs) {
   cout << "[appmc] Added XOR ";
   for (size_t i = 0; i < vars.size(); i++) {
@@ -76,17 +83,18 @@ void AppMC::openLogFile() {
   }
 }
 
-template <class T> inline T findMedian(vector<T> &numList) {
-  size_t med_index = numList.size() / 2;
-  std::nth_element(numList.begin(), numList.begin() + med_index, numList.end());
-  return numList[med_index];
+template <class T> inline T findMedian(vector<T> &num_list) {
+  size_t med_index = num_list.size() / 2;
+  std::nth_element(num_list.begin(), num_list.begin() + med_index,
+                   num_list.end());
+  return num_list[med_index];
 }
 
-template <class T> inline T findMin(vector<T> &numList) {
-  T min = std::numeric_limits<T>::max();
-  for (const auto a : numList) {
-    if (a < min) {
-      min = a;
+template <class T> inline T findMin(vector<T> &num_list) {
+  T min = num_list[0];
+  for (auto it = num_list.begin() + 1; it != num_list.end(); ++it) {
+    if ((*it) < min) {
+      min = *it;
     }
   }
   return min;
@@ -198,34 +206,6 @@ uint64_t AppMC::boundedSolCount(uint32_t max_solutions,
   return solutions;
 }
 
-int AppMC::solve(AppMCConfig _conf) {
-  conf = _conf;
-
-  openLogFile();
-  random_engine.seed(conf.seed);
-  total_runtime = cpuTimeTotal();
-  cout << "[appmc] Using start iteration " << conf.start_iter << endl;
-
-  SATCount solCount;
-  bool finished = count(solCount);
-  assert(finished);
-
-  cout << "[appmc] FINISHED AppMC T: " << (cpuTimeTotal() - start_time) << " s"
-       << endl;
-  if (solCount.hash_count == 0 && solCount.cell_sol_count == 0) {
-    cout << "[appmc] Formula was UNSAT " << endl;
-  }
-
-  if (conf.verb > 2) {
-    solver->print_stats();
-  }
-
-  cout << "[appmc] Number of solutions is: " << solCount.cell_sol_count
-       << " x 2^" << solCount.hash_count << endl;
-
-  return correctReturnValue(l_True);
-}
-
 void AppMC::setHash(uint32_t num_hashes, vector<Lit> &hash_vars,
                     vector<Lit> &assumps) {
   if (num_hashes < assumps.size()) {
@@ -249,37 +229,40 @@ void AppMC::setHash(uint32_t num_hashes, vector<Lit> &hash_vars,
   }
 }
 
-bool AppMC::count(SATCount &count) {
+uint64_t AppMC::approxCount(double epsilon, double delta) {
   count.clear();
-  vector<uint64_t> num_hash_list;
   vector<uint64_t> num_count_list;
   vector<Lit> assumps;
-
-  uint64_t hash_count = conf.start_iter;
+  assert(epsilon > 0);
+  assert(delta > 0 && delta < 1);
+  uint32_t threshold =
+      uint32_t(1 + 9.84 * (1 + (1 / epsilon)) * (1 + (1 / epsilon)) *
+                       (1 + (epsilon / (1 + epsilon))));
+  uint32_t measurements = (int)std::ceil(std::log2(3.0 / conf.delta) * 17);
+  uint32_t hash_count = conf.start_iter;
   uint64_t hash_prev = 0;
   uint64_t m_prev = 0;
 
   double myTime = cpuTimeTotal();
   cout << "[appmc] Starting up, initial measurement" << endl;
+  // NOTE: is this first check really usefull ?
   if (hash_count == 0) {
     uint64_t current_num_solutions =
-        boundedSolCount(conf.threshold + 1, assumps, count.hash_count);
+        boundedSolCount(threshold + 1, assumps, hash_count);
     if (!conf.logfilename.empty()) {
       logfile << "appmc:"
               << "0:0:" << std::fixed << std::setprecision(2)
               << (cpuTimeTotal() - myTime) << ":"
-              << (int)(current_num_solutions == (conf.threshold + 1)) << ":"
+              << (int)(current_num_solutions == (threshold + 1)) << ":"
               << current_num_solutions << endl;
     }
 
     // Didn't find at least threshold+1
-    if (current_num_solutions <= conf.threshold) {
-      cout << "[appmc] Did not find at least threshold+1 (" << conf.threshold
+    if (current_num_solutions <= threshold) {
+      cout << "[appmc] Did not find at least threshold+1 (" << threshold
            << ") we found only " << current_num_solutions << ", exiting AppMC"
            << endl;
-      count.cell_sol_count = current_num_solutions;
-      count.hash_count = 0;
-      return true;
+      return current_num_solutions;
     }
     hash_count++;
   }
@@ -291,9 +274,9 @@ bool AppMC::count(SATCount &count) {
     setHash(total_max_xors, hash_vars, assumps);
   }
 
-  for (uint32_t j = 0; j < conf.measurements; j++) {
-    map<uint64_t, uint64_t> count_record;
-    map<uint64_t, uint8_t> succ_record;
+  for (uint32_t j = 0; j < measurements; j++) {
+    map<uint32_t, uint64_t> count_record;
+    map<uint32_t, uint8_t> succ_record;
     vector<Lit> hash_vars; // map assumption var to XOR hash
 
     // Note, the rank of a random NxN matrix is not N of course. It has an
@@ -304,12 +287,12 @@ bool AppMC::count(SATCount &count) {
     // in sect. 3.2. Thanks to Yash Pote to digging this one out. Very
     // helpful.
 
-    uint64_t numExplored = 0;
+    uint64_t num_explored = 0;
     uint64_t lowerFib = 0;
     uint64_t upperFib = total_max_xors;
 
-    while (numExplored < total_max_xors) {
-      cout << "[appmc] Explored: " << std::setw(4) << numExplored
+    while (num_explored < total_max_xors) {
+      cout << "[appmc] Explored: " << std::setw(4) << num_explored
            << " ind set size: " << std::setw(6) << conf.sampling_set.size()
            << endl;
       myTime = cpuTimeTotal();
@@ -317,25 +300,23 @@ bool AppMC::count(SATCount &count) {
       setHash(hash_count, hash_vars, assumps);
       cout << "[appmc] hashes active: " << std::setw(6) << hash_count << endl;
       uint64_t current_num_solutions =
-          boundedSolCount(conf.threshold + 1, assumps, hash_count);
+          boundedSolCount(threshold + 1, assumps, hash_count);
 
       if (!conf.logfilename.empty()) {
         logfile << "appmc:" << j << ":" << hash_count << ":" << std::fixed
                 << std::setprecision(2) << (cpuTimeTotal() - myTime) << ":"
-                << (int)(current_num_solutions == (conf.threshold + 1)) << ":"
+                << (int)(current_num_solutions == (threshold + 1)) << ":"
                 << current_num_solutions << endl;
       }
 
-      if (current_num_solutions <= conf.threshold) {
-        numExplored = lowerFib + total_max_xors - hash_count;
+      if (current_num_solutions <= threshold) {
+        num_explored = lowerFib + total_max_xors - hash_count;
 
         // check success record if it exists
         if (succ_record.find(hash_count - 1) != succ_record.end() &&
             succ_record[hash_count - 1] == 1) {
-          num_hash_list.push_back(hash_count);
-          num_count_list.push_back(current_num_solutions);
+          num_count_list.push_back(current_num_solutions * pow(2, hash_count));
           m_prev = hash_count;
-          // less than threshold solutions
           break;
         }
 
@@ -353,14 +334,14 @@ bool AppMC::count(SATCount &count) {
           hash_count = (lowerFib + upperFib) / 2;
         }
       } else {
-        assert(current_num_solutions == conf.threshold + 1);
-        numExplored = hash_count + total_max_xors - upperFib;
+        assert(current_num_solutions == threshold + 1);
+        num_explored = hash_count + total_max_xors - upperFib;
 
         // Check if success record for +1 hash_count exists and is 0
         if (succ_record.find(hash_count + 1) != succ_record.end() &&
             succ_record[hash_count + 1] == 0) {
-          num_hash_list.push_back(hash_count + 1);
-          num_count_list.push_back(count_record[hash_count + 1]);
+          num_count_list.push_back(count_record[hash_count + 1] *
+                                   pow(2, hash_count + 1));
           m_prev = hash_count + 1;
           break;
         }
@@ -385,23 +366,10 @@ bool AppMC::count(SATCount &count) {
   }
   if (num_hash_list.size() == 0) {
     // UNSAT
-    count.cell_sol_count = 0;
-    count.hash_count = 0;
-    return true;
+    return 0;
   }
 
-  auto minHash = findMin(num_hash_list);
-  auto cnt_it = num_count_list.begin();
-  for (auto hash_it = num_hash_list.begin();
-       hash_it != num_hash_list.end() && cnt_it != num_count_list.end();
-       hash_it++, cnt_it++) {
-    *cnt_it *= pow(2, (*hash_it) - minHash);
-  }
-  int medSolCount = findMedian(num_count_list);
-
-  count.cell_sol_count = medSolCount;
-  count.hash_count = minHash;
-  return true;
+  return findMedian(num_count_list);
 }
 
 ///////////

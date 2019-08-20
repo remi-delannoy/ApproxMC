@@ -39,28 +39,16 @@ using std::string;
 using std::vector;
 using namespace CMSat;
 
-struct SATCount {
-  void clear() {
-    hash_count = 0;
-    cell_sol_count = 0;
-  }
-  uint32_t hash_count = 0;
-  uint32_t cell_sol_count = 0;
-};
-
 class AppMC {
 public:
-  AppMC() {}
+  AppMC(AppMCConfig conf, SATSolver *solver);
 
   ~AppMC() {}
 
-  int solve(AppMCConfig _conf);
   void printVersionInfo() const;
-  SATSolver *solver = NULL;
   uint64_t approxCount(double epsilon, double delta);
 
 private:
-  bool count(SATCount &count);
   void readInAFile(SATSolver *solver2, const string &filename);
   void readInStandardInput(SATSolver *solver2);
   void openLogFile();
@@ -78,6 +66,7 @@ private:
   std::ofstream logfile;
   std::mt19937 random_engine;
   AppMCConfig conf;
+  SATSolver *solver;
 
   int argc;
   char **argv;
