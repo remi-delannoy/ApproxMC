@@ -41,11 +41,11 @@ using namespace CMSat;
 
 struct SATCount {
   void clear() {
-    hashCount = 0;
-    cellSolCount = 0;
+    hash_count = 0;
+    cell_sol_count = 0;
   }
-  uint32_t hashCount = 0;
-  uint32_t cellSolCount = 0;
+  uint32_t hash_count = 0;
+  uint32_t cell_sol_count = 0;
 };
 
 class AppMC {
@@ -55,10 +55,7 @@ public:
   ~AppMC() {}
 
   int solve(AppMCConfig _conf);
-  bool gen_rhs();
   void printVersionInfo() const;
-  string GenerateRandomBits(const uint32_t size, const uint32_t numhashes);
-  string binary(const uint32_t x, const uint32_t length);
   SATSolver *solver = NULL;
   uint64_t approxCount(double epsilon, double delta);
 
@@ -67,20 +64,19 @@ private:
   void readInAFile(SATSolver *solver2, const string &filename);
   void readInStandardInput(SATSolver *solver2);
   void openLogFile();
-  void addHash(uint32_t num_xor_cls, vector<Lit> &assumps,
+  void addHash(uint32_t num_hashes, vector<Lit> &assumps,
                uint32_t total_num_hashes);
-  void setHash(uint32_t clausNum, std::map<uint64_t, Lit> &hashVars,
+  void setHash(uint32_t num_hashes, std::map<uint64_t, Lit> &hash_vars,
                vector<Lit> &assumps);
   int correctReturnValue(const lbool ret) const;
 
-  uint64_t boundedSolCount(uint32_t maxSolutions, const vector<Lit> &assumps,
-                           const uint32_t hashCount);
+  uint64_t boundedSolCount(uint32_t max_solutions, const vector<Lit> &assumps,
+                           const uint32_t hash_count);
 
-  double startTime;
-  double total_runtime; // runTime
-  std::map<std::string, std::vector<uint32_t>> globalSolutionMap;
+  double start_time;
+  double total_runtime;
   std::ofstream logfile;
-  std::mt19937 randomEngine;
+  std::mt19937 random_engine;
   AppMCConfig conf;
 
   int argc;

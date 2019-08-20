@@ -92,15 +92,20 @@ template <class T> inline T findMin(vector<T> &numList) {
   return min;
 }
 
-void AppMC::addHash(uint32_t num_xor_cls, vector<Lit> &assumps,
+void AppMC::addHash(uint32_t num_hashes, vector<Lit> &assumps,
                     uint32_t total_num_hashes) {
-  const string randomBits = GenerateRandomBits(
-      conf.sampling_set.size() * num_xor_cls, total_num_hashes);
+  std::uniform_real_distribution<uint32_t> dist{0.0, 1.0};
+  double cutoff = 0.5;
+  if (conf.sparse && total_num_hashes > 132) {
+    // NOTE: magic numbers are related to yash's work
+    cutoff = 13.46 * std::log(total_num_hashes) / total_num_hashes;
+    assert(cutoff < 0.5);
+    cout << "[appmc] sparse hashing used, cutoff: " << cutoff << endl;
+  }
 
-  bool rhs;
   vector<uint32_t> vars;
 
-  for (uint32_t i = 0; i < num_xor_cls; i++) {
+  for (uint32_t i = 0; i < num_hashes; i++) {
     // new activation variable, use to remove the clause later
     solver->new_var();
     uint32_t act_var = solver->nVars() - 1;
@@ -108,13 +113,14 @@ void AppMC::addHash(uint32_t num_xor_cls, vector<Lit> &assumps,
 
     vars.clear();
     vars.push_back(act_var);
-    rhs = gen_rhs();
 
     for (uint32_t j = 0; j < conf.sampling_set.size(); j++) {
-      if (randomBits.at(conf.sampling_set.size() * i + j) == '1') {
+      if (dist(random_engine) < cutoff) {
         vars.push_back(conf.sampling_set[j]);
       }
     }
+    // NOTE: do we need to use cutoff for the constant too ? I think so
+    bool rhs = dist(random_engine) < cutoff;
     solver->add_xor_clause(vars, rhs);
     if (conf.verb_appmc_cls) {
       printXor(vars, rhs);
@@ -122,14 +128,14 @@ void AppMC::addHash(uint32_t num_xor_cls, vector<Lit> &assumps,
   }
 }
 
-uint64_t AppMC::boundedSolCount(uint32_t maxSolutions,
+uint64_t AppMC::boundedSolCount(uint32_t max_solutions,
                                 const vector<Lit> &assumps,
                                 const uint32_t hash_count) {
   cout << "[appmc] "
           "[ "
        << std::setw(7) << std::setprecision(2) << std::fixed
        << (cpuTimeTotal() - total_runtime) << " ]"
-       << " bounded_sol_count looking for " << std::setw(4) << maxSolutions
+       << " bounded_sol_count looking for " << std::setw(4) << max_solutions
        << " solutions"
        << " -- hashes active: " << hash_count << endl;
 
@@ -146,7 +152,7 @@ uint64_t AppMC::boundedSolCount(uint32_t maxSolutions,
   uint64_t solutions = 0;
   lbool ret = l_True;
   double last_found_time = cpuTimeTotal();
-  while (solutions < maxSolutions && ret == l_True) {
+  while (solutions < max_solutions && ret == l_True) {
     ret = solver->solve(&new_assumps);
     assert(ret == l_False || ret == l_True);
 
@@ -192,35 +198,11 @@ uint64_t AppMC::boundedSolCount(uint32_t maxSolutions,
   return solutions;
 }
 
-bool AppMC::gen_rhs() {
-  std::uniform_int_distribution<uint32_t> dist{0, 1};
-  bool rhs = dist(randomEngine);
-  return rhs;
-}
-
-string AppMC::GenerateRandomBits(const uint32_t size,
-                                 const uint32_t num_hashes) {
-  string randomBits;
-  std::uniform_real_distribution<uint32_t> dist{0.0, 1.0};
-  double cutoff = 0.5;
-  if (conf.sparse && num_hashes > 132) {
-    // NOTE: magic numbers probably related to yash's work
-    cutoff = 13.46 * std::log(num_hashes) / num_hashes;
-    assert(cutoff < 0.5);
-    cout << "[appmc] sparse hashing used, cutoff: " << cutoff << endl;
-  }
-
-  for (uint i = 0; i < size; i++) {
-    randomBits += dist(randomEngine) < cutoff ? '0' : '1';
-  }
-  return randomBits;
-}
-
 int AppMC::solve(AppMCConfig _conf) {
   conf = _conf;
 
   openLogFile();
-  randomEngine.seed(conf.seed);
+  random_engine.seed(conf.seed);
   total_runtime = cpuTimeTotal();
   cout << "[appmc] Using start iteration " << conf.start_iter << endl;
 
@@ -228,9 +210,9 @@ int AppMC::solve(AppMCConfig _conf) {
   bool finished = count(solCount);
   assert(finished);
 
-  cout << "[appmc] FINISHED AppMC T: " << (cpuTimeTotal() - startTime) << " s"
+  cout << "[appmc] FINISHED AppMC T: " << (cpuTimeTotal() - start_time) << " s"
        << endl;
-  if (solCount.hash_count == 0 && solCount.cellSolCount == 0) {
+  if (solCount.hash_count == 0 && solCount.cell_sol_count == 0) {
     cout << "[appmc] Formula was UNSAT " << endl;
   }
 
@@ -238,30 +220,30 @@ int AppMC::solve(AppMCConfig _conf) {
     solver->print_stats();
   }
 
-  cout << "[appmc] Number of solutions is: " << solCount.cellSolCount << " x 2^"
-       << solCount.hash_count << endl;
+  cout << "[appmc] Number of solutions is: " << solCount.cell_sol_count
+       << " x 2^" << solCount.hash_count << endl;
 
   return correctReturnValue(l_True);
 }
 
-void AppMC::setHash(uint32_t clausNum, vector<Lit> &hashVars,
+void AppMC::setHash(uint32_t num_hashes, vector<Lit> &hash_vars,
                     vector<Lit> &assumps) {
-  if (clausNum < assumps.size()) {
-    uint64_t numberToRemove = assumps.size() - clausNum;
+  if (num_hashes < assumps.size()) {
+    uint64_t numberToRemove = assumps.size() - num_hashes;
     for (uint64_t i = 0; i < numberToRemove; i++) {
       assumps.pop_back();
     }
   } else {
-    if (clausNum > assumps.size() && assumps.size() < hashVars.size()) {
-      for (size_t i = assumps.size(); i < hashVars.size() && i < clausNum;
+    if (num_hashes > assumps.size() && assumps.size() < hash_vars.size()) {
+      for (size_t i = assumps.size(); i < hash_vars.size() && i < num_hashes;
            i++) {
-        assumps.push_back(hashVars[i]);
+        assumps.push_back(hash_vars[i]);
       }
     }
-    if (clausNum > hashVars.size()) {
-      addHash(clausNum - hashVars.size(), assumps, clausNum);
-      for (size_t i = hashVars.size(); i < clausNum; i++) {
-        hashVars.push_back(assumps[i]);
+    if (num_hashes > hash_vars.size()) {
+      addHash(num_hashes - hash_vars.size(), assumps, num_hashes);
+      for (size_t i = hash_vars.size(); i < num_hashes; i++) {
+        hash_vars.push_back(assumps[i]);
       }
     }
   }
@@ -269,8 +251,8 @@ void AppMC::setHash(uint32_t clausNum, vector<Lit> &hashVars,
 
 bool AppMC::count(SATCount &count) {
   count.clear();
-  vector<uint64_t> numHashList;
-  vector<uint64_t> numCountList;
+  vector<uint64_t> num_hash_list;
+  vector<uint64_t> num_count_list;
   vector<Lit> assumps;
 
   uint64_t hash_count = conf.start_iter;
@@ -280,22 +262,22 @@ bool AppMC::count(SATCount &count) {
   double myTime = cpuTimeTotal();
   cout << "[appmc] Starting up, initial measurement" << endl;
   if (hash_count == 0) {
-    uint64_t currentNumSolutions =
+    uint64_t current_num_solutions =
         boundedSolCount(conf.threshold + 1, assumps, count.hash_count);
     if (!conf.logfilename.empty()) {
       logfile << "appmc:"
               << "0:0:" << std::fixed << std::setprecision(2)
               << (cpuTimeTotal() - myTime) << ":"
-              << (int)(currentNumSolutions == (conf.threshold + 1)) << ":"
-              << currentNumSolutions << endl;
+              << (int)(current_num_solutions == (conf.threshold + 1)) << ":"
+              << current_num_solutions << endl;
     }
 
     // Didn't find at least threshold+1
-    if (currentNumSolutions <= conf.threshold) {
+    if (current_num_solutions <= conf.threshold) {
       cout << "[appmc] Did not find at least threshold+1 (" << conf.threshold
-           << ") we found only " << currentNumSolutions << ", exiting AppMC"
+           << ") we found only " << current_num_solutions << ", exiting AppMC"
            << endl;
-      count.cellSolCount = currentNumSolutions;
+      count.cell_sol_count = current_num_solutions;
       count.hash_count = 0;
       return true;
     }
@@ -306,13 +288,13 @@ bool AppMC::count(SATCount &count) {
   if (conf.sparse) {
     // NOTE: for the sparse approach we need to add all the hashes first to
     // have the correct probability
-    setHash(total_max_xors, hashVars, assumps);
+    setHash(total_max_xors, hash_vars, assumps);
   }
 
   for (uint32_t j = 0; j < conf.measurements; j++) {
-    map<uint64_t, uint64_t> countRecord;
-    map<uint64_t, uint32_t> succRecord;
-    vector<Lit> hashVars; // map assumption var to XOR hash
+    map<uint64_t, uint64_t> count_record;
+    map<uint64_t, uint8_t> succ_record;
+    vector<Lit> hash_vars; // map assumption var to XOR hash
 
     // Note, the rank of a random NxN matrix is not N of course. It has an
     // expected rank that is of course lower than N. So we need to shoot
@@ -332,34 +314,34 @@ bool AppMC::count(SATCount &count) {
            << endl;
       myTime = cpuTimeTotal();
       uint64_t swapVar = hash_count;
-      setHash(hash_count, hashVars, assumps);
+      setHash(hash_count, hash_vars, assumps);
       cout << "[appmc] hashes active: " << std::setw(6) << hash_count << endl;
-      uint64_t currentNumSolutions =
+      uint64_t current_num_solutions =
           boundedSolCount(conf.threshold + 1, assumps, hash_count);
 
       if (!conf.logfilename.empty()) {
         logfile << "appmc:" << j << ":" << hash_count << ":" << std::fixed
                 << std::setprecision(2) << (cpuTimeTotal() - myTime) << ":"
-                << (int)(currentNumSolutions == (conf.threshold + 1)) << ":"
-                << currentNumSolutions << endl;
+                << (int)(current_num_solutions == (conf.threshold + 1)) << ":"
+                << current_num_solutions << endl;
       }
 
-      if (currentNumSolutions <= conf.threshold) {
+      if (current_num_solutions <= conf.threshold) {
         numExplored = lowerFib + total_max_xors - hash_count;
 
         // check success record if it exists
-        if (succRecord.find(hash_count - 1) != succRecord.end() &&
-            succRecord[hash_count - 1] == 1) {
-          numHashList.push_back(hash_count);
-          numCountList.push_back(currentNumSolutions);
+        if (succ_record.find(hash_count - 1) != succ_record.end() &&
+            succ_record[hash_count - 1] == 1) {
+          num_hash_list.push_back(hash_count);
+          num_count_list.push_back(current_num_solutions);
           m_prev = hash_count;
           // less than threshold solutions
           break;
         }
 
         // No success record
-        succRecord[hash_count] = 0;
-        countRecord[hash_count] = currentNumSolutions;
+        succ_record[hash_count] = 0;
+        count_record[hash_count] = current_num_solutions;
         upperFib = hash_count;
         if (m_prev - hash_count <= 2 &&
             m_prev != 0) { // NOTE: in this case hash_count always <=m_prev
@@ -371,20 +353,20 @@ bool AppMC::count(SATCount &count) {
           hash_count = (lowerFib + upperFib) / 2;
         }
       } else {
-        assert(currentNumSolutions == conf.threshold + 1);
+        assert(current_num_solutions == conf.threshold + 1);
         numExplored = hash_count + total_max_xors - upperFib;
 
         // Check if success record for +1 hash_count exists and is 0
-        if (succRecord.find(hash_count + 1) != succRecord.end() &&
-            succRecord[hash_count + 1] == 0) {
-          numHashList.push_back(hash_count + 1);
-          numCountList.push_back(countRecord[hash_count + 1]);
+        if (succ_record.find(hash_count + 1) != succ_record.end() &&
+            succ_record[hash_count + 1] == 0) {
+          num_hash_list.push_back(hash_count + 1);
+          num_count_list.push_back(count_record[hash_count + 1]);
           m_prev = hash_count + 1;
           break;
         }
 
         // No success record of hash_count+1 or it's not 0
-        succRecord[hash_count] = 1;
+        succ_record[hash_count] = 1;
         if (hash_count - m_prev < 2 &&
             m_prev != 0) { // NOTE: in this case hash_count always >=m_prev
           lowerFib = hash_count;
@@ -401,23 +383,23 @@ bool AppMC::count(SATCount &count) {
     assumps.clear();
     hash_count = m_prev;
   }
-  if (numHashList.size() == 0) {
+  if (num_hash_list.size() == 0) {
     // UNSAT
-    count.cellSolCount = 0;
+    count.cell_sol_count = 0;
     count.hash_count = 0;
     return true;
   }
 
-  auto minHash = findMin(numHashList);
-  auto cnt_it = numCountList.begin();
-  for (auto hash_it = numHashList.begin();
-       hash_it != numHashList.end() && cnt_it != numCountList.end();
+  auto minHash = findMin(num_hash_list);
+  auto cnt_it = num_count_list.begin();
+  for (auto hash_it = num_hash_list.begin();
+       hash_it != num_hash_list.end() && cnt_it != num_count_list.end();
        hash_it++, cnt_it++) {
     *cnt_it *= pow(2, (*hash_it) - minHash);
   }
-  int medSolCount = findMedian(numCountList);
+  int medSolCount = findMedian(num_count_list);
 
-  count.cellSolCount = medSolCount;
+  count.cell_sol_count = medSolCount;
   count.hash_count = minHash;
   return true;
 }
