@@ -204,7 +204,7 @@ string AppMC::GenerateRandomBits(const uint32_t size,
   std::uniform_real_distribution<uint32_t> dist{0.0, 1.0};
   double cutoff = 0.5;
   if (conf.sparse && num_hashes > 132) {
-    // NOTE : magic numbers probably related to yash's work
+    // NOTE: magic numbers probably related to yash's work
     cutoff = 13.46 * std::log(num_hashes) / num_hashes;
     assert(cutoff < 0.5);
     cout << "[appmc] sparse hashing used, cutoff: " << cutoff << endl;
@@ -301,6 +301,13 @@ bool AppMC::count(SATCount &count) {
     }
     hash_count++;
   }
+  uint64_t total_max_xors =
+      std::ceil((double)conf.sampling_set.size() * 1.2) + 5;
+  if (conf.sparse) {
+    // NOTE: for the sparse approach we need to add all the hashes first to
+    // have the correct probability
+    setHash(total_max_xors, hashVars, assumps);
+  }
 
   for (uint32_t j = 0; j < conf.measurements; j++) {
     map<uint64_t, uint64_t> countRecord;
@@ -314,9 +321,6 @@ bool AppMC::count(SATCount &count) {
     // Apparently this question is analyzed in Kolchin's book Random Graphs
     // in sect. 3.2. Thanks to Yash Pote to digging this one out. Very
     // helpful.
-    uint64_t total_max_xors =
-        std::ceil((double)conf.sampling_set.size() * 1.2) +
-        5; // NOTE: can be set before
 
     uint64_t numExplored = 0;
     uint64_t lowerFib = 0;
