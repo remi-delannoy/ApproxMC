@@ -67,9 +67,6 @@ private:
   std::mt19937 random_engine;
   AppMCConfig conf;
   SATSolver *solver;
-
-  int argc;
-  char **argv;
 };
 
 #endif // AppMC_H_

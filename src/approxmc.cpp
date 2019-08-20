@@ -59,6 +59,7 @@ AppMC::AppMC(AppMCConfig conf, SATSolver *solver) : conf(conf), solver(solver) {
     cerr << "No solver was defined" << endl;
     exit(1);
   }
+  random_engine.seed(conf.seed);
 }
 
 void printXor(const vector<uint32_t> &vars, const uint32_t rhs) {
@@ -205,6 +206,32 @@ uint64_t AppMC::boundedSolCount(uint32_t max_solutions,
   assert(ret != l_Undef);
   return solutions;
 }
+
+// int AppMC::solve() {
+//   openLogFile();
+//   random_engine.seed(conf.seed);
+//   total_runtime = cpuTimeTotal();
+//   cout << "[appmc] Using start iteration " << conf.start_iter << endl;
+//
+//   bool finished = approxCount(solCount);
+//   assert(finished);
+//
+//   cout << "[appmc] FINISHED AppMC T: " << (cpuTimeTotal() - start_time) << "
+//   s"
+//        << endl;
+//   if (solCount.hash_count == 0 && solCount.cell_sol_count == 0) {
+//     cout << "[appmc] Formula was UNSAT " << endl;
+//   }
+//
+//   if (conf.verb > 2) {
+//     solver->print_stats();
+//   }
+//
+//   cout << "[appmc] Number of solutions is: " << solCount.cell_sol_count
+//        << " x 2^" << solCount.hash_count << endl;
+//
+//   return correctReturnValue(l_True);
+// }
 
 void AppMC::setHash(uint32_t num_hashes, vector<Lit> &hash_vars,
                     vector<Lit> &assumps) {
