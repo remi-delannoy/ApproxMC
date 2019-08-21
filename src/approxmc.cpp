@@ -259,6 +259,7 @@ uint64_t AppMC::approxCount(double epsilon, double delta) {
   count.clear();
   vector<uint64_t> num_count_list;
   vector<Lit> assumps;
+  vector<Lit> hash_vars; // assumption var to XOR hash
   assert(epsilon > 0);
   assert(delta > 0 && delta < 1);
   uint32_t threshold =
@@ -266,133 +267,92 @@ uint64_t AppMC::approxCount(double epsilon, double delta) {
                        (1 + (epsilon / (1 + epsilon))));
   uint32_t measurements = (int)std::ceil(std::log2(3.0 / conf.delta) * 17);
   uint32_t hash_count = conf.start_iter;
-  uint64_t hash_prev = 0;
-  uint64_t m_prev = 0;
 
   double myTime = cpuTimeTotal();
-  cout << "[appmc] Starting up, initial measurement" << endl;
-  // NOTE: is this first check really usefull ?
-  if (hash_count == 0) {
-    uint64_t current_num_solutions =
-        boundedSolCount(threshold + 1, assumps, hash_count);
-    if (!conf.logfilename.empty()) {
-      logfile << "appmc:"
-              << "0:0:" << std::fixed << std::setprecision(2)
-              << (cpuTimeTotal() - myTime) << ":"
-              << (int)(current_num_solutions == (threshold + 1)) << ":"
-              << current_num_solutions << endl;
-    }
 
-    // Didn't find at least threshold+1
-    if (current_num_solutions <= threshold) {
-      cout << "[appmc] Did not find at least threshold+1 (" << threshold
-           << ") we found only " << current_num_solutions << ", exiting AppMC"
-           << endl;
-      return current_num_solutions;
-    }
-    hash_count++;
-  }
+  // Note, the rank of a random NxN matrix is not N of course. It has an
+  // expected rank that is of course lower than N. So we need to shoot
+  // higher.
+  // https://math.stackexchange.com/questions/324150/expected-rank-of-a-random-binary-matrix
+  // Apparently this question is analyzed in Kolchin's book Random Graphs
+  // in sect. 3.2. Thanks to Yash Pote to digging this one out. Very
+  // helpful.
   uint64_t total_max_xors =
       std::ceil((double)conf.sampling_set.size() * 1.2) + 5;
-  if (conf.sparse) {
-    // NOTE: for the sparse approach we need to add all the hashes first to
-    // have the correct probability
-    setHash(total_max_xors, hash_vars, assumps);
-  }
 
   for (uint32_t j = 0; j < measurements; j++) {
-    map<uint32_t, uint64_t> count_record;
-    map<uint32_t, uint8_t> succ_record;
-    vector<Lit> hash_vars; // map assumption var to XOR hash
+    hash_vars.clear();
+    assumps.clear();
+    if (conf.sparse) {
+      // NOTE: for the sparse approach we need to add all the hashes first to
+      // have the correct probability
+      setHash(total_max_xors, hash_vars, assumps);
+    }
 
-    // Note, the rank of a random NxN matrix is not N of course. It has an
-    // expected rank that is of course lower than N. So we need to shoot
-    // higher.
-    // https://math.stackexchange.com/questions/324150/expected-rank-of-a-random-binary-matrix
-    // Apparently this question is analyzed in Kolchin's book Random Graphs
-    // in sect. 3.2. Thanks to Yash Pote to digging this one out. Very
-    // helpful.
+    uint64_t lower_bound = 0;
+    uint64_t upper_bound = total_max_xors;
+    uint64_t best_num_solution;
+    // NOTE: we don"t reset hash_count : we start from the previous optimal
+    // hash_count
+    setHash(hash_count, hash_vars, assumps);
+    uint64_t current_num_solutions =
+        boundedSolCount(threshold + 1, assumps, hash_count);
+    uint64_t jump = 1;
+    // exponential search in O(ln(|last_optimal-new_optimal|))
+    if (current_num_solutions <= threshold) {
+      while (current_num_solutions <= treshold &&
+             upper_bound - jump > lower_bound) {
+        best_num_solution = current_num_solutions;
+        upper_bound = hash_count;
+        hash_count -= jump;
+        jump *= 2;
+        setHash(hash_count, hash_vars, assumps);
+        uint64_t current_num_solutions =
+            boundedSolCount(threshold + 1, assumps, hash_count);
+      }
+      if (current_num_solutions > treshold) {
+        lower_bound = hash_count;
+      }
+    } else {
+      while (current_num_solutions > treshold &&
+             lower_bound + jump < upper_bound) {
+        lower_bound = hash_count;
+        hash_count += jump;
+        jump *= 2;
+        setHash(hash_count, hash_vars, assumps);
+        uint64_t current_num_solutions =
+            boundedSolCount(threshold + 1, assumps, hash_count);
+      }
+      if (current_num_solutions <= treshold) {
+        upper_bound = hash_count;
+        best_num_solution = current_num_solutions;
+      }
+    }
 
-    uint64_t num_explored = 0;
-    uint64_t lowerFib = 0;
-    uint64_t upperFib = total_max_xors;
-
-    while (num_explored < total_max_xors) {
-      cout << "[appmc] Explored: " << std::setw(4) << num_explored
-           << " ind set size: " << std::setw(6) << conf.sampling_set.size()
-           << endl;
+    while (lower_bound < upper_bound - 1) {
+      cout << "[appmc] gap to explore: " << std::setw(4)
+           << upper_bound - lower_bound << " ind set size: " << std::setw(6)
+           << conf.sampling_set.size() << endl;
       myTime = cpuTimeTotal();
-      uint64_t swapVar = hash_count;
-      setHash(hash_count, hash_vars, assumps);
+      hash_count = (lower_bound + upper_bound) / 2;
       cout << "[appmc] hashes active: " << std::setw(6) << hash_count << endl;
-      uint64_t current_num_solutions =
-          boundedSolCount(threshold + 1, assumps, hash_count);
-
       if (!conf.logfilename.empty()) {
         logfile << "appmc:" << j << ":" << hash_count << ":" << std::fixed
                 << std::setprecision(2) << (cpuTimeTotal() - myTime) << ":"
                 << (int)(current_num_solutions == (threshold + 1)) << ":"
                 << current_num_solutions << endl;
       }
-
-      if (current_num_solutions <= threshold) {
-        num_explored = lowerFib + total_max_xors - hash_count;
-
-        // check success record if it exists
-        if (succ_record.find(hash_count - 1) != succ_record.end() &&
-            succ_record[hash_count - 1] == 1) {
-          num_count_list.push_back(current_num_solutions * pow(2, hash_count));
-          m_prev = hash_count;
-          break;
-        }
-
-        // No success record
-        succ_record[hash_count] = 0;
-        count_record[hash_count] = current_num_solutions;
-        upperFib = hash_count;
-        if (m_prev - hash_count <= 2 &&
-            m_prev != 0) { // NOTE: in this case hash_count always <=m_prev
-          hash_count--;
-        } else {
-          if (hash_prev < hash_count) {
-            lowerFib = hash_prev;
-          }
-          hash_count = (lowerFib + upperFib) / 2;
-        }
+      setHash(hash_count, hash_vars, assumps);
+      uint64_t current_num_solutions =
+          boundedSolCount(threshold + 1, assumps, hash_count);
+      if (current_num_solutions <= treshold) {
+        best_num_solution = current_num_solutions;
+        upper_bound = hash_count;
       } else {
-        assert(current_num_solutions == threshold + 1);
-        num_explored = hash_count + total_max_xors - upperFib;
-
-        // Check if success record for +1 hash_count exists and is 0
-        if (succ_record.find(hash_count + 1) != succ_record.end() &&
-            succ_record[hash_count + 1] == 0) {
-          num_count_list.push_back(count_record[hash_count + 1] *
-                                   pow(2, hash_count + 1));
-          m_prev = hash_count + 1;
-          break;
-        }
-
-        // No success record of hash_count+1 or it's not 0
-        succ_record[hash_count] = 1;
-        if (hash_count - m_prev < 2 &&
-            m_prev != 0) { // NOTE: in this case hash_count always >=m_prev
-          lowerFib = hash_count;
-          hash_count++;
-        } else if (lowerFib + (hash_count - lowerFib) * 2 >= upperFib - 1) {
-          lowerFib = hash_count;
-          hash_count = (lowerFib + upperFib) / 2;
-        } else {
-          hash_count = lowerFib + (hash_count - lowerFib) * 2;
-        }
+        lower_bound = hash_count;
       }
-      hash_prev = swapVar;
     }
-    assumps.clear();
-    hash_count = m_prev;
-  }
-  if (num_hash_list.size() == 0) {
-    // UNSAT
-    return 0;
+    num_count_list.push_back(best_num_solution);
   }
 
   return findMedian(num_count_list);
