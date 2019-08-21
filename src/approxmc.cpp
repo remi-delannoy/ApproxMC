@@ -139,14 +139,15 @@ void AppMC::addHash(uint32_t num_hashes, vector<Lit> &assumps,
 uint64_t AppMC::boundedSolCount(uint32_t max_solutions,
                                 const vector<Lit> &assumps,
                                 const uint32_t hash_count) {
-  cout << "[appmc] "
-          "[ "
-       << std::setw(7) << std::setprecision(2) << std::fixed
-       << (cpuTimeTotal() - total_runtime) << " ]"
-       << " bounded_sol_count looking for " << std::setw(4) << max_solutions
-       << " solutions"
-       << " -- hashes active: " << hash_count << endl;
-
+  if (conf.verb >= 1) {
+    cout << "[appmc] "
+            "[ "
+         << std::setw(7) << std::setprecision(2) << std::fixed
+         << (cpuTimeTotal() - total_runtime) << " ]"
+         << " bounded_sol_count looking for " << std::setw(4) << max_solutions
+         << " solutions"
+         << " -- hashes active: " << hash_count << endl;
+  }
   // Set up things for adding clauses that can later be removed
   vector<lbool> model;
   vector<Lit> new_assumps(assumps);
@@ -205,32 +206,6 @@ uint64_t AppMC::boundedSolCount(uint32_t max_solutions,
   return solutions;
 }
 
-// int AppMC::solve() {
-//   openLogFile();
-//   random_engine.seed(conf.seed);
-//   total_runtime = cpuTimeTotal();
-//   cout << "[appmc] Using start iteration " << conf.start_iter << endl;
-//
-//   bool finished = approxCount(solCount);
-//   assert(finished);
-//
-//   cout << "[appmc] FINISHED AppMC T: " << (cpuTimeTotal() - start_time) << "
-//   s"
-//        << endl;
-//   if (solCount.hash_count == 0 && solCount.cell_sol_count == 0) {
-//     cout << "[appmc] Formula was UNSAT " << endl;
-//   }
-//
-//   if (conf.verb > 2) {
-//     solver->print_stats();
-//   }
-//
-//   cout << "[appmc] Number of solutions is: " << solCount.cell_sol_count
-//        << " x 2^" << solCount.hash_count << endl;
-//
-//   return correctReturnValue(l_True);
-// }
-
 void AppMC::setHash(uint32_t num_hashes, vector<Lit> &hash_vars,
                     vector<Lit> &assumps) {
   if (num_hashes < assumps.size()) {
@@ -254,8 +229,9 @@ void AppMC::setHash(uint32_t num_hashes, vector<Lit> &hash_vars,
   }
 }
 
-uint64_t AppMC::approxCount(double epsilon, double delta) {
+std::pair<uint64_t, uint32_t> AppMC::approxCount(double epsilon, double delta) {
   vector<uint64_t> num_count_list;
+  vector<uint32_t> num_hash_list;
   vector<Lit> assumps;
   vector<Lit> hash_vars; // assumption var to XOR hash
   assert(epsilon > 0);
@@ -289,7 +265,8 @@ uint64_t AppMC::approxCount(double epsilon, double delta) {
 
     uint64_t lower_bound = 0;
     uint64_t upper_bound = total_max_xors;
-    uint64_t best_num_solution;
+    uint64_t best_num_solution = 0;
+    uint32_t best_num_hash = 0;
     // NOTE: we don"t reset hash_count : we start from the previous optimal
     // hash_count
     setHash(hash_count, hash_vars, assumps);
@@ -299,9 +276,12 @@ uint64_t AppMC::approxCount(double epsilon, double delta) {
     // exponential search in O(ln(|last_optimal-new_optimal|))
     if (current_num_solutions <= threshold) {
       upper_bound = hash_count;
+      best_num_solution = current_num_solutions;
+      best_num_hash = hash_count;
       while (current_num_solutions <= threshold &&
              upper_bound - lower_bound > jump) {
         best_num_solution = current_num_solutions;
+        best_num_hash = hash_count;
         upper_bound = hash_count;
         hash_count -= jump;
         jump *= 2;
@@ -326,16 +306,13 @@ uint64_t AppMC::approxCount(double epsilon, double delta) {
       if (current_num_solutions <= threshold) {
         upper_bound = hash_count;
         best_num_solution = current_num_solutions;
+        best_num_hash = hash_count;
       }
     }
 
     while (upper_bound - lower_bound > 1) {
-      cout << "[appmc] gap to explore: " << std::setw(4)
-           << upper_bound - lower_bound << " ind set size: " << std::setw(6)
-           << conf.sampling_set.size() << endl;
       myTime = cpuTimeTotal();
       hash_count = (lower_bound + upper_bound) / 2;
-      cout << "[appmc] hashes active: " << std::setw(6) << hash_count << endl;
       if (!conf.logfilename.empty()) {
         logfile << "appmc:" << j << ":" << hash_count << ":" << std::fixed
                 << std::setprecision(2) << (cpuTimeTotal() - myTime) << ":"
@@ -347,15 +324,24 @@ uint64_t AppMC::approxCount(double epsilon, double delta) {
           boundedSolCount(threshold + 1, assumps, hash_count);
       if (current_num_solutions <= threshold) {
         best_num_solution = current_num_solutions;
+        best_num_hash = hash_count;
         upper_bound = hash_count;
       } else {
         lower_bound = hash_count;
       }
     }
     num_count_list.push_back(best_num_solution);
+    num_hash_list.push_back(best_num_hash);
+  }
+  uint32_t hash_min = findMin(num_hash_list);
+  auto num_hash_it = num_hash_list.begin();
+  for (auto num_sol_it = num_count_list.begin();
+       num_sol_it != num_count_list.end() && num_hash_it != num_hash_list.end();
+       ++num_sol_it, ++num_hash_it) {
+    *num_sol_it *= pow(2, (*num_hash_it) - hash_min);
   }
 
-  return findMedian(num_count_list);
+  return std::make_pair(findMedian(num_count_list), hash_min);
 }
 
 ///////////
