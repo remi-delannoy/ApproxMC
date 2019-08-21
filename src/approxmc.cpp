@@ -104,7 +104,7 @@ template <class T> inline T findMin(vector<T> &num_list) {
 
 void AppMC::addHash(uint32_t num_hashes, vector<Lit> &assumps,
                     uint32_t total_num_hashes) {
-  std::uniform_real_distribution<uint32_t> dist{0.0, 1.0};
+  std::uniform_real_distribution<double> dist{0.0, 1.0};
   double cutoff = 0.5;
   if (conf.sparse && total_num_hashes > 132) {
     // NOTE: magic numbers are related to yash's work
@@ -187,8 +187,7 @@ uint64_t AppMC::boundedSolCount(uint32_t max_solutions,
       lits.push_back(Lit(act_var, true));
       for (const uint32_t var : conf.sampling_set) {
         assert(model[var] != l_Undef);
-        lits.push_back(
-            Lit(var, model[var] == l_True)); // NOTE: shouldn't it be != true ?
+        lits.push_back(Lit(var, model[var] == l_True));
       }
       if (conf.verb_appmc_cls) {
         cout << "[appmc] Adding banning clause: " << lits << endl;
@@ -256,7 +255,6 @@ void AppMC::setHash(uint32_t num_hashes, vector<Lit> &hash_vars,
 }
 
 uint64_t AppMC::approxCount(double epsilon, double delta) {
-  count.clear();
   vector<uint64_t> num_count_list;
   vector<Lit> assumps;
   vector<Lit> hash_vars; // assumption var to XOR hash
@@ -265,7 +263,7 @@ uint64_t AppMC::approxCount(double epsilon, double delta) {
   uint32_t threshold =
       uint32_t(1 + 9.84 * (1 + (1 / epsilon)) * (1 + (1 / epsilon)) *
                        (1 + (epsilon / (1 + epsilon))));
-  uint32_t measurements = (int)std::ceil(std::log2(3.0 / conf.delta) * 17);
+  uint32_t measurements = (int)std::ceil(std::log2(3.0 / delta) * 17);
   uint32_t hash_count = conf.start_iter;
 
   double myTime = cpuTimeTotal();
@@ -300,36 +298,38 @@ uint64_t AppMC::approxCount(double epsilon, double delta) {
     uint64_t jump = 1;
     // exponential search in O(ln(|last_optimal-new_optimal|))
     if (current_num_solutions <= threshold) {
-      while (current_num_solutions <= treshold &&
-             upper_bound - jump > lower_bound) {
+      upper_bound = hash_count;
+      while (current_num_solutions <= threshold &&
+             upper_bound - lower_bound > jump) {
         best_num_solution = current_num_solutions;
         upper_bound = hash_count;
         hash_count -= jump;
         jump *= 2;
         setHash(hash_count, hash_vars, assumps);
-        uint64_t current_num_solutions =
+        current_num_solutions =
             boundedSolCount(threshold + 1, assumps, hash_count);
       }
-      if (current_num_solutions > treshold) {
+      if (current_num_solutions > threshold) {
         lower_bound = hash_count;
       }
     } else {
-      while (current_num_solutions > treshold &&
-             lower_bound + jump < upper_bound) {
+      lower_bound = hash_count;
+      while (current_num_solutions > threshold &&
+             upper_bound - lower_bound > jump) {
         lower_bound = hash_count;
         hash_count += jump;
         jump *= 2;
         setHash(hash_count, hash_vars, assumps);
-        uint64_t current_num_solutions =
+        current_num_solutions =
             boundedSolCount(threshold + 1, assumps, hash_count);
       }
-      if (current_num_solutions <= treshold) {
+      if (current_num_solutions <= threshold) {
         upper_bound = hash_count;
         best_num_solution = current_num_solutions;
       }
     }
 
-    while (lower_bound < upper_bound - 1) {
+    while (upper_bound - lower_bound > 1) {
       cout << "[appmc] gap to explore: " << std::setw(4)
            << upper_bound - lower_bound << " ind set size: " << std::setw(6)
            << conf.sampling_set.size() << endl;
@@ -343,9 +343,9 @@ uint64_t AppMC::approxCount(double epsilon, double delta) {
                 << current_num_solutions << endl;
       }
       setHash(hash_count, hash_vars, assumps);
-      uint64_t current_num_solutions =
+      current_num_solutions =
           boundedSolCount(threshold + 1, assumps, hash_count);
-      if (current_num_solutions <= treshold) {
+      if (current_num_solutions <= threshold) {
         best_num_solution = current_num_solutions;
         upper_bound = hash_count;
       } else {

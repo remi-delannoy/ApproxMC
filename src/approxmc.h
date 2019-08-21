@@ -54,7 +54,7 @@ private:
   void openLogFile();
   void addHash(uint32_t num_hashes, vector<Lit> &assumps,
                uint32_t total_num_hashes);
-  void setHash(uint32_t num_hashes, std::map<uint64_t, Lit> &hash_vars,
+  void setHash(uint32_t num_hashes, std::vector<Lit> &hash_vars,
                vector<Lit> &assumps);
   int correctReturnValue(const lbool ret) const;
 
