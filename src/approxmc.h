@@ -45,6 +45,7 @@ public:
 
   ~AppMC() {}
 
+  static void printVersionInfo(SATSolver *solver);
   void printVersionInfo() const;
   std::pair<uint64_t, uint32_t> approxCount(double epsilon, double delta);
   // The number of solutions can be very large thus we return it in the form

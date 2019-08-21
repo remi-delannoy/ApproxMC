@@ -348,7 +348,7 @@ std::pair<uint64_t, uint32_t> AppMC::approxCount(double epsilon, double delta) {
 // Useful helper functions
 ///////////
 
-void printVersionInfoAppMC() {
+static void printVersionInfoAppMC() {
   cout << "c AppMC SHA revision " << ::get_version_sha1() << endl;
   cout << "c AppMC version " << ::get_version_tag() << endl;
   cout << "c AppMC compilation env " << ::get_compilation_env() << endl;
@@ -359,6 +359,10 @@ void printVersionInfoAppMC() {
 #endif
 }
 
+void AppMC::printVersionInfo(SATSolver *solver) {
+  ::printVersionInfoAppMC();
+  cout << solver->get_text_version_info();
+}
 void AppMC::printVersionInfo() const {
   ::printVersionInfoAppMC();
   cout << solver->get_text_version_info();
