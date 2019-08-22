@@ -39,10 +39,6 @@ struct AppMCConfig {
   uint32_t seed = 1;
   std::vector<uint32_t> sampling_set;
   std::string logfilename = "";
-  // NOTE: If kappa has been removed the next line is useless
-  double kappa = 0.638;   /* Corresponds to epsilon=16 */
-  uint32_t startiter = 0; // NOTE: what's the difference with start_iter ?
-  // it doesn't seems to be used
 };
 
 #endif // APPMCCONFIG

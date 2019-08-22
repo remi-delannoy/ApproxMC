@@ -79,9 +79,7 @@ void add_appmc_options(double epsilon, double delta, AppMCConfig &conf) {
       po::value(&conf.verb_appmc_cls)->default_value(conf.verb_appmc_cls),
       "Print banning clause + xor clauses. Highly verbose.")(
       "sparse", po::value(&conf.sparse)->default_value(conf.sparse),
-      "Generate sparse XORs when possible")(
-      "startiter", po::value(&conf.startiter)->default_value(conf.startiter),
-      "If positive, use instead of startiter computed by AppMC");
+      "Generate sparse XORs when possible");
 
   help_options.add(appmc_options);
 }

@@ -92,7 +92,6 @@ template <class T> inline T findMedian(vector<T> &num_list) {
 }
 
 template <class T> inline T findMin(vector<T> &num_list) {
-  // NOTE: is useless atm
   T min = num_list[0];
   for (auto it = num_list.begin() + 1; it != num_list.end(); ++it) {
     if ((*it) < min) {
