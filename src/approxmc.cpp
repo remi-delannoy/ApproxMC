@@ -138,7 +138,7 @@ void AppMC::addHash(uint32_t num_hashes, vector<Lit> &assumps,
 uint64_t AppMC::boundedSolCount(uint32_t max_solutions,
                                 const vector<Lit> &assumps,
                                 const uint32_t hash_count) {
-  if (conf.verb >= 1) {
+  if (conf.verb >= 2) {
     cout << "[appmc] "
             "[ "
          << std::setw(7) << std::setprecision(2) << std::fixed
