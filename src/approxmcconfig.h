@@ -28,6 +28,8 @@
 #ifndef APPMCCONFIG
 #define APPMCCONFIG
 
+#include <cstdint>
+#include <string>
 #include <vector>
 
 struct AppMCConfig {

@@ -44,29 +44,14 @@ include_directories(${CRYPTOMINISAT5_INCLUDE_DIRS})
 
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/GitSHA1.cpp.in" "${CMAKE_CURRENT_BINARY_DIR}/GitSHA1.cpp" @ONLY)
 
-if (NOT EMSCRIPTEN)
-    add_executable(approxmc
-        approxmc.cpp
-        main.cpp
-        ${CMAKE_CURRENT_BINARY_DIR}/GitSHA1.cpp
-    )
-else()
-    add_executable(approxmc
-        approxmc.cpp
-        main_min.cpp
-        ${CMAKE_CURRENT_BINARY_DIR}/GitSHA1.cpp
-    )
+add_library(approxmc
+          approxmc.cpp)
 
-    set_target_properties(
-      approxmc PROPERTIES LINK_FLAGS "-s WASM=1 -s ALLOW_MEMORY_GROWTH=1 -s EXTRA_EXPORTED_RUNTIME_METHODS='[\"ccall\", \"cwrap\"]'  -s LINKABLE=1 -s EXPORT_ALL=1"
-    )
-
-
-    SET_SOURCE_FILES_PROPERTIES(main_min.cpp
-        PROPERTIES COMPILE_FLAGS "-s WASM=1 -s ALLOW_MEMORY_GROWTH=1 -s EXTRA_EXPORTED_RUNTIME_METHODS='[\"ccall\", \"cwrap\"]'  -s LINKABLE=1 -s EXPORT_ALL=1"
-    )
-endif()
-
+add_executable(approxmc-bin
+    approxmc.cpp
+    main.cpp
+    ${CMAKE_CURRENT_BINARY_DIR}/GitSHA1.cpp
+)
 
 set(approxmc_exec_link_libs
     ${Boost_LIBRARIES}
@@ -79,27 +64,48 @@ ENDIF()
 target_link_libraries(approxmc
     ${approxmc_exec_link_libs}
 )
+GENERATE_EXPORT_HEADER(approxmc
+         BASE_NAME approxmc
+)
+set_target_properties(approxmc PROPERTIES
+            PUBLIC_HEADER "${approxmc_public_headers}")
+
+target_link_libraries(approxmc-bin
+    ${approxmc_exec_link_libs}
+)
 
 if (STATICCOMPILE)
-    SET_TARGET_PROPERTIES(approxmc PROPERTIES LINK_SEARCH_START_STATIC 1)
+    SET_TARGET_PROPERTIES(approxmc-bin PROPERTIES LINK_SEARCH_START_STATIC 1)
     SET(cms_libs ${CRYPTOMINISAT5_STATIC_LIBRARIES})
     message(STATUS "bimm: ${CRYPTOMINISAT5_STATIC_LIBRARIES}")
 else()
     SET(cms_libs ${CRYPTOMINISAT5_LIBRARIES})
 endif()
-set_target_properties(approxmc PROPERTIES
+set_target_properties(approxmc-bin PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}
     INSTALL_RPATH_USE_LINK_PATH TRUE)
 if (STATICCOMPILE)
-    SET_TARGET_PROPERTIES(approxmc PROPERTIES LINK_SEARCH_END_STATIC 1)
+    SET_TARGET_PROPERTIES(approxmc-bin PROPERTIES LINK_SEARCH_END_STATIC 1)
 endif()
 
 target_link_libraries(approxmc
     ${cms_libs}
 )
+target_link_libraries(approxmc-bin
+    ${cms_libs}
+)
 
+install(TARGETS approxmc-bin
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+
+cmsat_add_public_header(approxmc ${CMAKE_CURRENT_SOURCE_DIR}/approxmc.h)
+cmsat_add_public_header(approxmc ${CMAKE_CURRENT_SOURCE_DIR}/approxmcconfig.h)
 install(TARGETS approxmc
     EXPORT ${APPROXMC_EXPORT_NAME}
-    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+    ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+    RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
+    PUBLIC_HEADER DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/approxmc"
 )
-SET(CPACK_PACKAGE_EXECUTABLES "approxmc")
+
+SET(CPACK_PACKAGE_EXECUTABLES "approxmc-bin")
