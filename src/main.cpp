@@ -279,7 +279,7 @@ int main(int argc, char **argv) {
   add_supported_options(argc, argv, conf, solver.get());
   cout << "[appmc] using seed: " << conf.seed << endl;
 
-  if (vm.count("log") == 0) {
+  if (vm["log"].as<string>().empty()) {
     if (vm.count("input") != 0) {
       conf.logfilename = vm["input"].as<vector<string>>()[0] + ".log";
       cout << "[appmc] Logfile name not given, assumed to be "
