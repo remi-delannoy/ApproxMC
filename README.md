@@ -29,15 +29,13 @@ sudo apt-get install zlib1g-dev libboost-program-options-dev libm4ri-dev
 
 Then, build CryptoMiniSat and ApproxMC:
 ```
-git clone https://github.com/msoos/cryptominisat
-cd cryptominisat
+git clone --recurse-submodules https://github.com/remi-delannoy/approxmc/
+cd ApproxMC/cryptominisat
 mkdir build && cd build
 cmake -DUSE_GAUSS=ON ..
 make
 sudo make install
 cd ../..
-git clone https://github.com/meelgroup/approxmc/
-cd approxmc
 mkdir build && cd build
 cmake ..
 make
