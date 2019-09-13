@@ -62,12 +62,12 @@ private:
   uint64_t boundedSolCount(uint32_t max_solutions, const vector<Lit> &assumps,
                            const uint32_t hash_count);
 
-  double start_time;
-  double total_runtime;
-  std::ofstream logfile;
-  std::mt19937 random_engine;
-  AppMCConfig conf;
-  SATSolver *solver;
+  double start_time_;
+  double total_runtime_;
+  std::ofstream logfile_;
+  std::mt19937 random_engine_;
+  AppMCConfig conf_;
+  SATSolver *solver_;
 };
 
 #endif // AppMC_H_

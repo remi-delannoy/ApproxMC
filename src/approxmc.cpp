@@ -54,12 +54,13 @@ using std::endl;
 using std::list;
 using std::map;
 
-AppMC::AppMC(AppMCConfig conf, SATSolver *solver) : conf(conf), solver(solver) {
-  if (solver == NULL) {
+AppMC::AppMC(AppMCConfig conf, SATSolver *solver)
+    : conf_(conf), solver_(solver) {
+  if (solver_ == NULL) {
     cerr << "No solver was defined" << endl;
     exit(1);
   }
-  random_engine.seed(conf.seed);
+  random_engine_.seed(conf_.seed);
 }
 
 void printXor(const vector<uint32_t> &vars, const uint32_t rhs) {
@@ -74,10 +75,10 @@ void printXor(const vector<uint32_t> &vars, const uint32_t rhs) {
 }
 
 void AppMC::openLogFile() {
-  if (!conf.logfilename.empty()) {
-    logfile.open(conf.logfilename.c_str());
-    if (!logfile.is_open()) {
-      cout << "[appmc] Cannot open AppMC log file '" << conf.logfilename
+  if (!conf_.logfilename.empty()) {
+    logfile_.open(conf_.logfilename.c_str());
+    if (!logfile_.is_open()) {
+      cout << "[appmc] Cannot open AppMC log file '" << conf_.logfilename
            << "' for writing." << endl;
       exit(1);
     }
@@ -121,19 +122,19 @@ void AppMC::addHash(vector<Lit> &assumps, double xor_density) {
   std::uniform_real_distribution<double> dist{0.0, 1.0};
   vector<uint32_t> vars;
   // new activation variable, use to control the number of active hashes
-  solver->new_var();
-  uint32_t act_var = solver->nVars() - 1;
+  solver_->new_var();
+  uint32_t act_var = solver_->nVars() - 1;
   assumps.push_back(Lit(act_var, true));
   vars.clear();
   vars.push_back(act_var);
-  for (uint32_t j = 0; j < conf.sampling_set.size(); j++) {
-    if (dist(random_engine) < xor_density) {
-      vars.push_back(conf.sampling_set[j]);
+  for (uint32_t j = 0; j < conf_.sampling_set.size(); j++) {
+    if (dist(random_engine_) < xor_density) {
+      vars.push_back(conf_.sampling_set[j]);
     }
   }
-  bool rhs = dist(random_engine) < 0.5;
-  solver->add_xor_clause(vars, rhs);
-  if (conf.verb_appmc_cls) {
+  bool rhs = dist(random_engine_) < 0.5;
+  solver_->add_xor_clause(vars, rhs);
+  if (conf_.verb_appmc_cls) {
     printXor(vars, rhs);
   }
 }
@@ -155,7 +156,7 @@ void AppMC::setHash(uint32_t num_hashes, vector<Lit> &hash_vars,
     if (num_hashes > hash_vars.size()) {
       for (size_t i = hash_vars.size(); i < num_hashes; i++) {
         double xor_density = 0.5;
-        if (conf.sparse) {
+        if (conf_.sparse) {
           // i+1 because we start at 1 and not 0
           double entropy = (i + 1) / (i + 1 + log2(pivot));
           xor_density = std::min(0.5, 16 / inverseBinEntropy(entropy) *
@@ -172,11 +173,11 @@ void AppMC::setHash(uint32_t num_hashes, vector<Lit> &hash_vars,
 uint64_t AppMC::boundedSolCount(uint32_t max_solutions,
                                 const vector<Lit> &assumps,
                                 const uint32_t hash_count) {
-  if (conf.verb >= 2) {
+  if (conf_.verb >= 2) {
     cout << "[appmc] "
             "[ "
          << std::setw(7) << std::setprecision(2) << std::fixed
-         << (cpuTimeTotal() - total_runtime) << " ]"
+         << (cpuTimeTotal() - total_runtime_) << " ]"
          << " bounded_sol_count looking for " << std::setw(4) << max_solutions
          << " solutions"
          << " -- hashes active: " << hash_count << endl;
@@ -184,21 +185,21 @@ uint64_t AppMC::boundedSolCount(uint32_t max_solutions,
   // Set up things for adding clauses that can later be removed
   vector<lbool> model;
   vector<Lit> new_assumps(assumps);
-  solver->new_var();
-  uint32_t act_var = solver->nVars() - 1;
+  solver_->new_var();
+  uint32_t act_var = solver_->nVars() - 1;
   new_assumps.push_back(Lit(act_var, true));
   if (hash_count > 2) {
-    solver->simplify(&new_assumps);
+    solver_->simplify(&new_assumps);
   }
 
   uint64_t solutions = 0;
   lbool ret = l_True;
   double last_found_time = cpuTimeTotal();
   while (solutions < max_solutions && ret == l_True) {
-    ret = solver->solve(&new_assumps);
+    ret = solver_->solve(&new_assumps);
     assert(ret == l_False || ret == l_True);
 
-    if (conf.verb >= 2) {
+    if (conf_.verb >= 2) {
       cout << "[appmc] bounded_sol_count ret: " << std::setw(7) << ret;
       if (ret == l_True) {
         cout << " sol no.  " << std::setw(3) << solutions;
@@ -206,7 +207,7 @@ uint64_t AppMC::boundedSolCount(uint32_t max_solutions,
         cout << " No more. " << std::setw(3) << "";
       }
       cout << " T: " << std::setw(7) << std::setprecision(2) << std::fixed
-           << (cpuTimeTotal() - total_runtime)
+           << (cpuTimeTotal() - total_runtime_)
            << " -- hashes act: " << hash_count
            << " -- T since last: " << std::setw(7) << std::setprecision(2)
            << std::fixed << (cpuTimeTotal() - last_found_time) << endl;
@@ -214,28 +215,28 @@ uint64_t AppMC::boundedSolCount(uint32_t max_solutions,
     }
 
     if (ret == l_True) {
-      model = solver->get_model();
+      model = solver_->get_model();
       solutions++;
 
       vector<Lit> lits;
       lits.push_back(Lit(act_var, false));
-      for (const uint32_t var : conf.sampling_set) {
+      for (const uint32_t var : conf_.sampling_set) {
         assert(model[var] != l_Undef);
         lits.push_back(
             Lit(var, model[var] == l_True)); // NOTE: adding Lit(x,true) means x
                                              // is inverted
       }
-      if (conf.verb_appmc_cls) {
+      if (conf_.verb_appmc_cls) {
         cout << "[appmc] Adding banning clause: " << lits << endl;
       }
-      solver->add_clause(lits);
+      solver_->add_clause(lits);
     }
   }
 
   // Remove clauses added
   vector<Lit> cl_that_removes;
   cl_that_removes.push_back(Lit(act_var, false));
-  solver->add_clause(cl_that_removes);
+  solver_->add_clause(cl_that_removes);
 
   assert(ret != l_Undef);
   return solutions;
@@ -252,7 +253,7 @@ std::pair<uint64_t, uint32_t> AppMC::approxCount(double epsilon, double delta) {
       uint32_t(1 + 9.84 * (1 + (1 / epsilon)) * (1 + (1 / epsilon)) *
                        (1 + (epsilon / (1 + epsilon))));
   uint32_t measurements = (int)std::ceil(std::log2(3.0 / delta) * 17);
-  uint32_t hash_count = conf.start_iter;
+  uint32_t hash_count = conf_.start_iter;
 
   double myTime = cpuTimeTotal();
 
@@ -264,9 +265,9 @@ std::pair<uint64_t, uint32_t> AppMC::approxCount(double epsilon, double delta) {
   // in sect. 3.2. Thanks to Yash Pote to digging this one out. Very
   // helpful.
   uint64_t total_max_xors =
-      std::ceil((double)conf.sampling_set.size() * 1.2) + 5;
-  double pivot = 78.72 * conf.ro * (1 + 1 / epsilon) *
-                 (1 + 1 / epsilon); // used only if conf.sparse
+      std::ceil((double)conf_.sampling_set.size() * 1.2) + 5;
+  double pivot = 78.72 * conf_.ro * (1 + 1 / epsilon) *
+                 (1 + 1 / epsilon); // used only if conf_.sparse
   for (uint32_t j = 0; j < measurements; j++) {
     hash_vars.clear();
     assumps.clear();
@@ -321,11 +322,11 @@ std::pair<uint64_t, uint32_t> AppMC::approxCount(double epsilon, double delta) {
     while (upper_bound - lower_bound > 1) {
       myTime = cpuTimeTotal();
       hash_count = (lower_bound + upper_bound) / 2;
-      if (!conf.logfilename.empty()) {
-        logfile << "appmc:" << j << ":" << hash_count << ":" << std::fixed
-                << std::setprecision(2) << (cpuTimeTotal() - myTime) << ":"
-                << (int)(current_num_solutions == (threshold + 1)) << ":"
-                << current_num_solutions << endl;
+      if (!conf_.logfilename.empty()) {
+        logfile_ << "appmc:" << j << ":" << hash_count << ":" << std::fixed
+                 << std::setprecision(2) << (cpuTimeTotal() - myTime) << ":"
+                 << (int)(current_num_solutions == (threshold + 1)) << ":"
+                 << current_num_solutions << endl;
       }
       setHash(hash_count, hash_vars, assumps, pivot);
       current_num_solutions =
@@ -373,7 +374,7 @@ void AppMC::printVersionInfo(SATSolver *solver) {
 }
 void AppMC::printVersionInfo() const {
   ::printVersionInfoAppMC();
-  cout << solver->get_text_version_info();
+  cout << solver_->get_text_version_info();
 }
 
 int AppMC::correctReturnValue(const lbool ret) const {
