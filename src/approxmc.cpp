@@ -242,10 +242,13 @@ uint64_t AppMC::boundedSolCount(uint32_t max_solutions,
   return solutions;
 }
 
-std::pair<uint64_t, uint32_t> AppMC::approxCount(double epsilon, double delta) {
+std::pair<uint64_t, uint32_t>
+AppMC::approxCountWithAssumptions(double epsilon, double delta,
+                                  std::vector<Lit> const &assumps) {
   vector<uint64_t> num_count_list;
   vector<uint32_t> num_hash_list;
-  vector<Lit> assumps;
+  vector<Lit> xor_assumps;
+  vector<Lit> full_assumps(assumps);
   vector<Lit> hash_vars; // assumption var to XOR hash
   assert(epsilon > 0);
   assert(delta > 0 && delta < 1);
@@ -270,7 +273,7 @@ std::pair<uint64_t, uint32_t> AppMC::approxCount(double epsilon, double delta) {
                  (1 + 1 / epsilon); // used only if conf_.sparse
   for (uint32_t j = 0; j < measurements; j++) {
     hash_vars.clear();
-    assumps.clear();
+    xor_assumps.clear();
 
     uint64_t lower_bound = 0;
     uint64_t upper_bound = total_max_xors;
@@ -278,9 +281,12 @@ std::pair<uint64_t, uint32_t> AppMC::approxCount(double epsilon, double delta) {
     uint32_t best_num_hash = 0;
     // NOTE: we don"t reset hash_count : we start from the previous optimal
     // hash_count
-    setHash(hash_count, hash_vars, assumps, pivot);
+    setHash(hash_count, hash_vars, xor_assumps, pivot);
+    full_assumps = assumps;
+    full_assumps.insert(full_assumps.end(), xor_assumps.begin(),
+                        xor_assumps.end());
     uint64_t current_num_solutions =
-        boundedSolCount(threshold + 1, assumps, hash_count);
+        boundedSolCount(threshold + 1, full_assumps, hash_count);
     uint64_t jump = 1;
     // exponential search in O(ln(|last_optimal-new_optimal|))
     if (current_num_solutions <= threshold) {
@@ -294,9 +300,12 @@ std::pair<uint64_t, uint32_t> AppMC::approxCount(double epsilon, double delta) {
         upper_bound = hash_count;
         hash_count -= jump;
         jump *= 2;
-        setHash(hash_count, hash_vars, assumps, pivot);
+        setHash(hash_count, hash_vars, xor_assumps, pivot);
+        full_assumps = assumps;
+        full_assumps.insert(full_assumps.end(), xor_assumps.begin(),
+                            xor_assumps.end());
         current_num_solutions =
-            boundedSolCount(threshold + 1, assumps, hash_count);
+            boundedSolCount(threshold + 1, full_assumps, hash_count);
       }
       if (current_num_solutions > threshold) {
         lower_bound = hash_count;
@@ -308,9 +317,12 @@ std::pair<uint64_t, uint32_t> AppMC::approxCount(double epsilon, double delta) {
         lower_bound = hash_count;
         hash_count += jump;
         jump *= 2;
-        setHash(hash_count, hash_vars, assumps, pivot);
+        setHash(hash_count, hash_vars, xor_assumps, pivot);
+        full_assumps = assumps;
+        full_assumps.insert(full_assumps.end(), xor_assumps.begin(),
+                            xor_assumps.end());
         current_num_solutions =
-            boundedSolCount(threshold + 1, assumps, hash_count);
+            boundedSolCount(threshold + 1, full_assumps, hash_count);
       }
       if (current_num_solutions <= threshold) {
         upper_bound = hash_count;
@@ -328,9 +340,12 @@ std::pair<uint64_t, uint32_t> AppMC::approxCount(double epsilon, double delta) {
                  << (int)(current_num_solutions == (threshold + 1)) << ":"
                  << current_num_solutions << endl;
       }
-      setHash(hash_count, hash_vars, assumps, pivot);
+      setHash(hash_count, hash_vars, xor_assumps, pivot);
+      full_assumps = assumps;
+      full_assumps.insert(full_assumps.end(), xor_assumps.begin(),
+                          xor_assumps.end());
       current_num_solutions =
-          boundedSolCount(threshold + 1, assumps, hash_count);
+          boundedSolCount(threshold + 1, full_assumps, hash_count);
       if (current_num_solutions <= threshold) {
         best_num_solution = current_num_solutions;
         best_num_hash = hash_count;
@@ -351,6 +366,11 @@ std::pair<uint64_t, uint32_t> AppMC::approxCount(double epsilon, double delta) {
   }
 
   return std::make_pair(findMedian(num_count_list), hash_min);
+}
+
+std::pair<uint64_t, uint32_t> AppMC::approxCount(double epsilon, double delta) {
+  vector<Lit> assumps;
+  return approxCountWithAssumptions(epsilon, delta, assumps);
 }
 
 ///////////
