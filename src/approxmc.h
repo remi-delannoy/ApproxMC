@@ -54,10 +54,9 @@ private:
   void readInAFile(SATSolver *solver2, const string &filename);
   void readInStandardInput(SATSolver *solver2);
   void openLogFile();
-  void addHash(uint32_t num_hashes, vector<Lit> &assumps,
-               uint32_t total_num_hashes);
+  void addHash(vector<Lit> &assumps, double xor_density);
   void setHash(uint32_t num_hashes, std::vector<Lit> &hash_vars,
-               vector<Lit> &assumps);
+               vector<Lit> &assumps, double pivot);
   int correctReturnValue(const lbool ret) const;
 
   uint64_t boundedSolCount(uint32_t max_solutions, const vector<Lit> &assumps,

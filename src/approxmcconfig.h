@@ -35,7 +35,8 @@
 struct AppMCConfig {
   uint32_t start_iter = 0;
   uint32_t num_threads = 1;
-  bool sparse = false;
+  bool sparse = true;
+  double ro = 1.1; // only usefull if sparse is true
   unsigned verb = 1;
   unsigned verb_appmc_cls = 0;
   uint32_t seed = 1;

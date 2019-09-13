@@ -101,36 +101,70 @@ template <class T> inline T findMin(vector<T> &num_list) {
   return min;
 }
 
-void AppMC::addHash(uint32_t num_hashes, vector<Lit> &assumps,
-                    uint32_t total_num_hashes) {
-  std::uniform_real_distribution<double> dist{0.0, 1.0};
-  double cutoff = 0.5;
-  if (conf.sparse && total_num_hashes > 132) {
-    // NOTE: magic numbers are related to yash's work
-    cutoff = 13.46 * std::log(total_num_hashes) / total_num_hashes;
-    assert(cutoff < 0.5);
-
-    cout << "[appmc] sparse hashing used, cutoff: " << cutoff << endl;
+double inverseBinEntropy(double x, double precision = 0.01) {
+  double a = 0;
+  double b = 0.5;
+  double p = (b + a) / 2;
+  while ((b - a) > precision) {
+    p = (b + a) / 2;
+    if ((-p * log2(p) - (1 - p) * log2(1 - p)) < x) {
+      a = p;
+    } else {
+      b = p;
+    }
   }
+  assert(p != 0);
+  return p;
+}
+
+void AppMC::addHash(vector<Lit> &assumps, double xor_density) {
+  std::uniform_real_distribution<double> dist{0.0, 1.0};
   vector<uint32_t> vars;
-  for (uint32_t i = 0; i < num_hashes; i++) {
-    // new activation variable, use to control the number of active hashes
-    solver->new_var();
-    uint32_t act_var = solver->nVars() - 1;
-    assumps.push_back(Lit(act_var, false));
+  // new activation variable, use to control the number of active hashes
+  solver->new_var();
+  uint32_t act_var = solver->nVars() - 1;
+  assumps.push_back(Lit(act_var, true));
+  vars.clear();
+  vars.push_back(act_var);
+  for (uint32_t j = 0; j < conf.sampling_set.size(); j++) {
+    if (dist(random_engine) < xor_density) {
+      vars.push_back(conf.sampling_set[j]);
+    }
+  }
+  bool rhs = dist(random_engine) < 0.5;
+  solver->add_xor_clause(vars, rhs);
+  if (conf.verb_appmc_cls) {
+    printXor(vars, rhs);
+  }
+}
 
-    vars.clear();
-    vars.push_back(act_var);
-
-    for (uint32_t j = 0; j < conf.sampling_set.size(); j++) {
-      if (dist(random_engine) < cutoff) {
-        vars.push_back(conf.sampling_set[j]);
+void AppMC::setHash(uint32_t num_hashes, vector<Lit> &hash_vars,
+                    vector<Lit> &assumps, double pivot) {
+  if (num_hashes < assumps.size()) {
+    uint64_t numberToRemove = assumps.size() - num_hashes;
+    for (uint64_t i = 0; i < numberToRemove; i++) {
+      assumps.pop_back();
+    }
+  } else {
+    if (num_hashes > assumps.size() && assumps.size() < hash_vars.size()) {
+      for (size_t i = assumps.size(); i < hash_vars.size() && i < num_hashes;
+           i++) {
+        assumps.push_back(hash_vars[i]);
       }
     }
-    bool rhs = dist(random_engine) < 0.5;
-    solver->add_xor_clause(vars, rhs);
-    if (conf.verb_appmc_cls) {
-      printXor(vars, rhs);
+    if (num_hashes > hash_vars.size()) {
+      for (size_t i = hash_vars.size(); i < num_hashes; i++) {
+        double xor_density = 0.5;
+        if (conf.sparse) {
+          // i+1 because we start at 1 and not 0
+          double entropy = (i + 1) / (i + 1 + log2(pivot));
+          xor_density = std::min(0.5, 16 / inverseBinEntropy(entropy) *
+                                          log2(i + 1) / (i + 1));
+        }
+        assert(xor_density <= 0.5);
+        addHash(assumps, xor_density);
+        hash_vars.push_back(assumps[i]);
+      }
     }
   }
 }
@@ -152,7 +186,7 @@ uint64_t AppMC::boundedSolCount(uint32_t max_solutions,
   vector<Lit> new_assumps(assumps);
   solver->new_var();
   uint32_t act_var = solver->nVars() - 1;
-  new_assumps.push_back(Lit(act_var, false));
+  new_assumps.push_back(Lit(act_var, true));
   if (hash_count > 2) {
     solver->simplify(&new_assumps);
   }
@@ -184,10 +218,12 @@ uint64_t AppMC::boundedSolCount(uint32_t max_solutions,
       solutions++;
 
       vector<Lit> lits;
-      lits.push_back(Lit(act_var, true));
+      lits.push_back(Lit(act_var, false));
       for (const uint32_t var : conf.sampling_set) {
         assert(model[var] != l_Undef);
-        lits.push_back(Lit(var, model[var] == l_True));
+        lits.push_back(
+            Lit(var, model[var] == l_True)); // NOTE: adding Lit(x,true) means x
+                                             // is inverted
       }
       if (conf.verb_appmc_cls) {
         cout << "[appmc] Adding banning clause: " << lits << endl;
@@ -198,34 +234,11 @@ uint64_t AppMC::boundedSolCount(uint32_t max_solutions,
 
   // Remove clauses added
   vector<Lit> cl_that_removes;
-  cl_that_removes.push_back(Lit(act_var, true));
+  cl_that_removes.push_back(Lit(act_var, false));
   solver->add_clause(cl_that_removes);
 
   assert(ret != l_Undef);
   return solutions;
-}
-
-void AppMC::setHash(uint32_t num_hashes, vector<Lit> &hash_vars,
-                    vector<Lit> &assumps) {
-  if (num_hashes < assumps.size()) {
-    uint64_t numberToRemove = assumps.size() - num_hashes;
-    for (uint64_t i = 0; i < numberToRemove; i++) {
-      assumps.pop_back();
-    }
-  } else {
-    if (num_hashes > assumps.size() && assumps.size() < hash_vars.size()) {
-      for (size_t i = assumps.size(); i < hash_vars.size() && i < num_hashes;
-           i++) {
-        assumps.push_back(hash_vars[i]);
-      }
-    }
-    if (num_hashes > hash_vars.size()) {
-      addHash(num_hashes - hash_vars.size(), assumps, num_hashes);
-      for (size_t i = hash_vars.size(); i < num_hashes; i++) {
-        hash_vars.push_back(assumps[i]);
-      }
-    }
-  }
 }
 
 std::pair<uint64_t, uint32_t> AppMC::approxCount(double epsilon, double delta) {
@@ -252,15 +265,11 @@ std::pair<uint64_t, uint32_t> AppMC::approxCount(double epsilon, double delta) {
   // helpful.
   uint64_t total_max_xors =
       std::ceil((double)conf.sampling_set.size() * 1.2) + 5;
-
+  double pivot = 78.72 * conf.ro * (1 + 1 / epsilon) *
+                 (1 + 1 / epsilon); // used only if conf.sparse
   for (uint32_t j = 0; j < measurements; j++) {
     hash_vars.clear();
     assumps.clear();
-    if (conf.sparse) {
-      // NOTE: for the sparse approach we need to add all the hashes first to
-      // have the correct probability
-      setHash(total_max_xors, hash_vars, assumps);
-    }
 
     uint64_t lower_bound = 0;
     uint64_t upper_bound = total_max_xors;
@@ -268,7 +277,7 @@ std::pair<uint64_t, uint32_t> AppMC::approxCount(double epsilon, double delta) {
     uint32_t best_num_hash = 0;
     // NOTE: we don"t reset hash_count : we start from the previous optimal
     // hash_count
-    setHash(hash_count, hash_vars, assumps);
+    setHash(hash_count, hash_vars, assumps, pivot);
     uint64_t current_num_solutions =
         boundedSolCount(threshold + 1, assumps, hash_count);
     uint64_t jump = 1;
@@ -284,7 +293,7 @@ std::pair<uint64_t, uint32_t> AppMC::approxCount(double epsilon, double delta) {
         upper_bound = hash_count;
         hash_count -= jump;
         jump *= 2;
-        setHash(hash_count, hash_vars, assumps);
+        setHash(hash_count, hash_vars, assumps, pivot);
         current_num_solutions =
             boundedSolCount(threshold + 1, assumps, hash_count);
       }
@@ -298,7 +307,7 @@ std::pair<uint64_t, uint32_t> AppMC::approxCount(double epsilon, double delta) {
         lower_bound = hash_count;
         hash_count += jump;
         jump *= 2;
-        setHash(hash_count, hash_vars, assumps);
+        setHash(hash_count, hash_vars, assumps, pivot);
         current_num_solutions =
             boundedSolCount(threshold + 1, assumps, hash_count);
       }
@@ -318,7 +327,7 @@ std::pair<uint64_t, uint32_t> AppMC::approxCount(double epsilon, double delta) {
                 << (int)(current_num_solutions == (threshold + 1)) << ":"
                 << current_num_solutions << endl;
       }
-      setHash(hash_count, hash_vars, assumps);
+      setHash(hash_count, hash_vars, assumps, pivot);
       current_num_solutions =
           boundedSolCount(threshold + 1, assumps, hash_count);
       if (current_num_solutions <= threshold) {
