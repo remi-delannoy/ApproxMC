@@ -71,6 +71,8 @@ void add_appmc_options(double epsilon, double delta, AppMCConfig &conf) {
       "delta parameter as per PAC guarantees; 1-delta is the confidence")(
       "start", po::value(&conf.start_iter)->default_value(conf.start_iter),
       "Start at this many XORs")(
+      "simplify", po::value(&conf.simplify)->default_value(conf.simplify),
+      "How often do we ask the solver to simplify the current formula")(
       "log", po::value(&conf.logfilename)->default_value(conf.logfilename),
       "Logs of ApproxMC execution")(
       "th", po::value(&conf.num_threads)->default_value(conf.num_threads),

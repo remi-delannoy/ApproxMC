@@ -54,6 +54,14 @@ using std::endl;
 using std::list;
 using std::map;
 
+int AppMC::getIterations(double delta) {
+  int it = 0;
+  while (iteration_confidences_[2 * it + 1] < 1 - delta) {
+    ++it;
+  }
+  return 2 * it + 1;
+}
+
 AppMC::AppMC(AppMCConfig conf, SATSolver *solver)
     : conf_(conf), solver_(solver) {
   if (solver_ == NULL) {
@@ -188,7 +196,7 @@ uint64_t AppMC::boundedSolCount(uint32_t max_solutions,
   solver_->new_var();
   uint32_t act_var = solver_->nVars() - 1;
   new_assumps.push_back(Lit(act_var, true));
-  if (hash_count > 2) {
+  if (conf_.simplify >= 2) {
     solver_->simplify(&new_assumps);
   }
 
@@ -199,7 +207,7 @@ uint64_t AppMC::boundedSolCount(uint32_t max_solutions,
     ret = solver_->solve(&new_assumps);
     assert(ret == l_False || ret == l_True);
 
-    if (conf_.verb >= 2) {
+    if (conf_.verb >= 3) {
       cout << "[appmc] bounded_sol_count ret: " << std::setw(7) << ret;
       if (ret == l_True) {
         cout << " sol no.  " << std::setw(3) << solutions;
@@ -255,7 +263,7 @@ AppMC::approxCountWithAssumptions(double epsilon, double delta,
   uint32_t threshold =
       uint32_t(1 + 9.84 * (1 + (1 / epsilon)) * (1 + (1 / epsilon)) *
                        (1 + (epsilon / (1 + epsilon))));
-  uint32_t measurements = (int)std::ceil(std::log2(3.0 / delta) * 17);
+  uint32_t measurements = getIterations(delta);
   uint32_t hash_count = conf_.start_iter;
 
   double myTime = cpuTimeTotal();
@@ -274,7 +282,9 @@ AppMC::approxCountWithAssumptions(double epsilon, double delta,
   for (uint32_t j = 0; j < measurements; j++) {
     hash_vars.clear();
     xor_assumps.clear();
-
+    if (conf_.simplify >= 1) {
+      solver_->simplify();
+    }
     uint64_t lower_bound = 0;
     uint64_t upper_bound = total_max_xors;
     uint64_t best_num_solution = 0;
